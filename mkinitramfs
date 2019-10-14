@@ -1,0 +1,103 @@
+#!/bin/bash
+
+DATA_DIR=/usr/share/mkinitramfs
+INITIN=init.in
+FEAT_DIR=/usr/share/mkinitramfs/features.d
+FEAT_LIST=(base modules udev)
+
+export WDIR=$(mktemp -d /tmp/initrd-work.$RANDOM)
+
+msg() {
+	printf '[\033[32m INFO\033[m ] %s\n' "$@"
+}
+
+warn() {
+    printf '[\033[33m WARN\033[m ] %s\n' "$@"
+}
+
+fail() {
+	printf '[\033[31m FAIL\033[m ] %s\n' "$@"
+	exit 1
+}
+
+install_binary() {
+	local binary binarylib
+
+    binary=$(type -p $1)
+	
+    if [ -f "$binary" ]; then
+		warn "Binary is missing: $binary"
+		return
+	fi
+
+    install_file $binary
+
+    binarylib=$(ldd $binary | grep -v "not" | sed "s/\t//" | cut -d " " -f1)
+
+    for lib in $binarylib; do
+		if [ "$binarylib" == "linux-vdso.so.1" ] || [ "$binarylib" == "linux-gate.so.1" ]; then
+            warn "Ignoreing $binarylib..."
+		    continue
+	    fi
+
+		install_file $(PATH=/lib:/lib64:/usr/lib:/usr/lib64 type -p $lib)
+	done
+}
+
+install_file() {
+    local src mode
+
+    src=$1
+
+    if [ ! -f "$src" ]; then
+		warn "File is missing: $src"
+		return
+	fi
+
+    src=${src/\//}
+
+    install -Dm$mode $src $WDIR/$src
+}
+
+do_create_initramfs() {
+    msg "Creating initramfs..."
+
+    (cd $WDIR find . | cpio -o -H newc --quiet | gzip -9) >$INITRAMFS_FILE
+}
+
+if [ -z $1 ]; then
+	fail "No kernel version passed. Exiting..."
+else
+	export KERNEL_VERSION=$1
+	export INITRAMFS_FILE=$PWD/initrd.img-$KERNEL_VERSION
+fi
+
+if [ ! -d $FEAT_DIR ]; then
+	fail "Feature directory does not exist..."
+fi
+
+msg "Starting build for $INITRAMFS_FILE..."
+
+for feat in $FEAT_LIST; do
+   if [ ! -f $FEAT_DIR/$feat.feat ]; then
+	fail "Feature file does not exist: $feat.feat..."
+   fi
+
+   source $feat.feat
+
+   msg "Building $feat feature..."
+
+   build_feature
+done
+
+msg "Installing init script program..."
+
+install -m0755 $DATADIR/$INITIN $WDIR/init
+
+do_create_initramfs
+
+msg "Cleaning up..."
+
+rm -rf $WDIR
+
+msg "Done."

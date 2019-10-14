@@ -1,0 +1,17 @@
+build_feature() {
+	if [ -f /etc/udev/udev.conf ]; then
+		msg "Installing udev configuration..."
+		cp /etc/udev/udev.conf $WDIR/etc/udev/udev.conf
+	fi
+
+	for file in $(find /etc/udev/rules.d/ -type f); do
+        msg "Installing $file udev rule..."
+		cp $file $WDIR/etc/udev/rules.d
+	done
+
+    msg "Installing udev binaries..."
+
+    add_binary udevd
+
+	add_binary udevadm
+}

@@ -1,0 +1,43 @@
+build_feature() {
+	local bin sbin
+
+	msg "Creating directories..."
+
+	mkdir -p $WDIR/{bin,dev,lib/firmware,run,sys,proc,usr}
+
+	mkdir -p $WDIR/etc/{modprobe.d,udev/rules.d}
+
+	msg "Adding modprobe config..."
+
+	touch $WDIR/etc/modprobe.d/modprobe.conf
+
+	msg "Creating links..."
+
+	ln -s lib $WDIR/lib64
+
+	ln -s ../bin $WDIR/usr/bin
+
+	ln -s bin $WDIR/sbin
+
+	ln -s ../bin $WDIR/usr/sbin
+
+    msg "Installing firmware..."
+
+    cp -a /lib/firmware $WDIR/lib
+
+	msg "Creating device nodes..."
+
+	mknod -m 640 $WDIR/dev/console c 5 1
+
+	mknod -m 664 $WDIR/dev/null c 1 3
+
+    msg "Installing base binaries..."
+
+	for bin in sh cat cp dd killall ls mkdir mknod mount umount sed sleep ln rm uname readlink basename; do
+		install_binary $bin
+	done
+
+	for sbin in modprobe blkid switch_root kmod lsmod insmod; do
+		install_binary $sbin
+	done
+}

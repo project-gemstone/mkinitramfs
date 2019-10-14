@@ -1,0 +1,166 @@
+#!/bin/sh
+
+export PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+msg() {
+	printf " \xE2\x96\xB6 $@ \n"
+}
+
+problem() {
+   printf "Encountered a problem!\n\nExecuting to a shell.\n\n"
+   sh
+}
+
+do_mount_root() {
+
+   mkdir /.root
+
+   [ -n "$rootflags" ] && rootflags="$rootflags,ro"
+
+   case "$root" in
+      /dev/* ) device=$root ;;
+      UUID=* ) eval $root; device="/dev/disk/by-uuid/$UUID"  ;;
+      LABEL=*) eval $root; device="/dev/disk/by-label/$LABEL" ;;
+      ""     ) msg "No root device specified." ; problem    ;;
+   esac
+
+   while [ ! -b "$device" ] ; do
+       msg "Could not find device, dropping into a recovery shell..."
+       sh
+   done
+
+   if ! mount -n -t "$rootfstype" -o "$rootflags" "$device" /.root ; then
+       msg  "Could not mount $device, dropping into a recovery shell..."
+       sh
+   else
+       msg "Successfully mounted device $root"
+   fi
+}
+
+find_media() {
+  msg "Finding disks..."
+  for device in /dev/sr*; do
+	    [ -b $device ] || continue
+	    msg "Looking into $device..."
+	    mount -o ro $device $MEDIUM &>/dev/null && \
+	    if [ -f $MEDIUM/boot/live ]; then
+		msg "Media found: $device"
+		LIVECD=$device
+		break
+	    else
+	        msg "Device is not a live media: $device"
+		umount $MEDIUM
+	    fi
+  done
+}
+
+init=/sbin/init
+root=
+rootdelay=
+rootfstype=auto
+livefs=root.sfs
+rootflags=
+device=
+ROOT=/.root
+
+mount -n -t devtmpfs devtmpfs /dev
+mount -n -t proc     proc     /proc
+mount -n -t sysfs    sysfs    /sys
+mount -n -t tmpfs    tmpfs    /run
+
+msg "Parseing command line..."
+
+read -r cmdline < /proc/cmdline
+
+for param in $cmdline ; do
+  case $param in
+    init=*      ) init=${param#init=}             ;;
+    root=*      ) root=${param#root=}             ;;
+    rootdelay=* ) rootdelay=${param#rootdelay=}   ;;
+    rootfstype=*) rootfstype=${param#rootfstype=} ;;
+    rootflags=* ) rootflags=${param#rootflags=}   ;;
+  esac
+done
+
+# udevd location depends on version
+if [ -x /sbin/udevd ] ; then
+  UDEVD=/sbin/udevd
+elif [ -x /lib/udev/udevd ]; then
+  UDEVD=/lib/udev/udevd
+elif [ -x /lib/systemd/systemd-udevd ]; then
+  UDEVD=/lib/systemd/systemd-udevd
+else
+  msg "Cannot find udevd or systemd-udevd" || problem
+fi
+
+msg "Starting eudev..."
+${UDEVD} --daemon --resolve-names=never
+udevadm trigger --action=add    --type=subsystems
+udevadm trigger --action=add    --type=devices
+udevadm trigger --action=change --type=devices
+udevadm settle
+
+if [ -n "$rootdelay"    ] ; then sleep "$rootdelay"; fi
+
+msg "Loading kernel modules..."
+
+for i in dm-mod md-mod ehci-pci overlay \
+	xhci-pci xhci-hcd ehci-hcd nls_iso8859_1 \
+	uhci-hcd uas sr_mod usb-storage loop \
+	squashfs isofs vfat fat nls_cp437; do
+	modprobe $i 2>/dev/null
+done
+
+if [ "$root" = "" ] ; then
+  MEDIUM=/medium
+  SYSTEM=/system
+  
+  msg "Preparing overlay..."
+  mkdir -p $MEDIUM $SYSTEM
+  
+  find_media
+  if [ "$LIVECD" = "" ] ; then
+      msg "Media not found, will try again in 5 seconds... -- $LIVECD"
+      sleep 5
+      find_media
+      if [ "$LIVECD" = "" ] ; then
+          msg "Media still not found, pleese reboot..."
+          sh
+      fi
+  fi
+      
+  msg "Mounting $livefs to $SYSTEM..."
+  
+  mount -t squashfs -o ro,loop $MEDIUM/filesystem/$livefs $SYSTEM || problem
+	
+  # mount overlayfs
+  WRITEDIR=/livecd/write
+  WORKDIR=/livecd/work
+  
+  mkdir -p /livecd
+  mount -t tmpfs -o rw tmpfs /livecd
+  mkdir -p $WRITEDIR $WORKDIR $ROOT
+      
+  msg "Mounting overlays to $ROOT..."
+  mount -t overlay overlay -o upperdir=$WRITEDIR,lowerdir=$SYSTEM,workdir=$WORKDIR $ROOT || problem
+
+  # skip fsck during startup
+  > $ROOT/fastboot
+
+  # Move mounted squashfs file to new root
+  mkdir -p $ROOT/lib/initramfs/{$SYSTEM,$MEDIUM}
+  mount --move $SYSTEM $ROOT/lib/initramfs/$SYSTEM
+  mount --move $MEDIUM $ROOT/lib/initramfs/$MEDIUM
+else
+  msg "Mounting root..."
+  do_mount_root
+fi
+
+msg "Stopping eudev..."
+killall -w ${UDEVD##*/}
+
+msg "Switching root to $ROOT..."
+exec switch_root $ROOT "$init" "$@"
+
+msg "Whoops!! -- Something went wrong with the init script..."
+sh
