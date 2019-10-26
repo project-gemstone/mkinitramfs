@@ -21,7 +21,7 @@ fail() {
 }
 
 install_binary() {
-	local binary binarylib
+    local binary binary_lib
 
     binary=$(type -p $1)
 	
@@ -32,16 +32,16 @@ install_binary() {
 
     install_file $binary
 
-    binarylib=$(ldd $binary | grep -v "not" | sed "s/\t//" | cut -d " " -f1)
+    binary_lib=$(ldd $binary | grep -v "not" | sed "s/\t//" | cut -d " " -f1)
 
-    for lib in $binarylib; do
-		if [ "$binarylib" == "linux-vdso.so.1" ] || [ "$binarylib" == "linux-gate.so.1" ]; then
-            warn "Ignoreing $binarylib..."
+    for lib in $binary_lib; do
+	    if [ "$binary_lib" == "linux-vdso.so.1" ] || [ "$binary_lib" == "linux-gate.so.1" ]; then
+                    warn "Ignoreing $binarylib..."
 		    continue
 	    fi
 
-		install_file $(PATH=/lib:/lib64:/usr/lib:/usr/lib64 type -p $lib)
-	done
+	    install_file $(PATH=/lib:/lib64:/usr/lib:/usr/lib64 type -p $lib)
+     done
 }
 
 install_file() {
