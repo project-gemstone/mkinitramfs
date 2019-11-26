@@ -5,13 +5,13 @@ build_feature() {
 	fi
 
 	for file in $(find /etc/udev/rules.d/ -type f); do
-        msg "Installing $file udev rule..."
+                msg "Installing $file udev rule..."
 		cp $file $WDIR/etc/udev/rules.d
 	done
 
-    msg "Installing udev binaries..."
+        msg "Installing udev binaries..."
 
-    add_binary udevd
+        add_binary udevd
 
 	add_binary udevadm
 }
