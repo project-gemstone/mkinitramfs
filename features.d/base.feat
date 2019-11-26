@@ -21,9 +21,9 @@ build_feature() {
 
 	ln -s ../bin $WDIR/usr/sbin
 
-    msg "Installing firmware..."
+        msg "Installing firmware..."
 
-    cp -a /lib/firmware $WDIR/lib
+        cp -a /lib/firmware $WDIR/lib
 
 	msg "Creating device nodes..."
 
