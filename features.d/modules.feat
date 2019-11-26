@@ -9,7 +9,7 @@ build_feature() {
 
 	cp /lib/modules/$KERNEL_VERSION/modules.{builtin,order} $WDIR/lib/modules/$KERNEL_VERSION
 
-    msg "Running depmod..."
+        msg "Running depmod..."
 
 	depmod -b $WDIR $KERNEL_VERSION
 }
